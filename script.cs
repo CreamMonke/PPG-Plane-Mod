@@ -141,30 +141,35 @@ namespace Mod
                         }
 
                         // menu buttons
-                        UnityAction[] explosion = { () => { plane.canExplode = !plane.canExplode; } };
-                        ContextMenuButton eB = new ContextMenuButton("explosion", "Disable Explosion", "Sets if the plane can explode or not. An explosion will only occur if the plane is running.", explosion);
-                        eB.LabelGetter = () => plane.canExplode ? "Disable Explosion" : "Enable Explosion";
-                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Insert(0, eB);
-
-                        UnityAction[] level = { () => { plane.pitchMode = 1; plane.pitch = 0f; } };
-                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Insert(0, new ContextMenuButton("level", "Level", "The plane will try to keep itself level.", level));
-                        
-                        UnityAction[] stabilize = { () => { plane.pitchMode = 2; plane.pitch = 0f; } };
-                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Insert(0, new ContextMenuButton("stabilize", "Stabilize", "The plane will reduce its angular velocity.", stabilize));
-                        
-                        UnityAction[] pitchDown = { () => { plane.pitchMode = 0; plane.pitch = -0.15f; } };
-                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Insert(0, new ContextMenuButton("pitchDown", "Pitch Down", "The plane will descend.", pitchDown));
-                        
                         UnityAction[] pitchUp = { () => { plane.pitchMode = 0; plane.pitch = 0.15f; } };
-                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Insert(0, new ContextMenuButton("pitchUp", "Pitch Up", "The plane will ascend.", pitchUp));
+                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Add(new ContextMenuButton("pitchUp", "Pitch Up", "The plane will ascend.", pitchUp));
+
+                        UnityAction[] pitchDown = { () => { plane.pitchMode = 0; plane.pitch = -0.15f; } };
+                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Add(new ContextMenuButton("pitchDown", "Pitch Down", "The plane will descend.", pitchDown));
                         
                         UnityAction[] resetPitch = { () => { plane.pitchMode = 0; plane.pitch = 0f; } };
-                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Insert(0, new ContextMenuButton("resetPitch", "Reset Pitch", "The pitch will be reset.", resetPitch));
+                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Add(new ContextMenuButton("resetPitch", "Reset Pitch", "The pitch will be reset.", resetPitch));
+
+                        UnityAction[] level = { () => { plane.pitchMode = 1; plane.pitch = 0f; } };
+                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Add(new ContextMenuButton("level", "Level", "The plane will try to keep itself level.", level));
+
+                        UnityAction[] stabilize = { () => { plane.pitchMode = 2; plane.pitch = 0f; } };
+                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Add(new ContextMenuButton("stabilize", "Stabilize", "The plane will reduce its angular velocity.", stabilize));
+
+                        UnityAction[] keyboard = { () => { plane.useKeyboard = !plane.useKeyboard; plane.pitch = 0f; plane.pitchMode = 0; } };
+                        ContextMenuButton eK = new ContextMenuButton("keyboard", "Disable Keyboard Control", "Toggle if the plane can be controled with IJKL. I/K - throttle ; J/L - pitch", keyboard);
+                        eK.LabelGetter = () => plane.useKeyboard ? "Disable Keyboard Control" : "Enable Keyboard Control";
+                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Add(eK);
                         
                         UnityAction[] brake = { () => { plane.wheel1.ToggleBrake(); plane.wheel2.ToggleBrake(); } };
                         ContextMenuButton bB = new ContextMenuButton("brake", "Disable Wheel Brakes", "The wheel brakes will be toggled on/off. This is also done automatically when the plane is turned on/off.", brake);
                         bB.LabelGetter = () => plane.wheel1.braked ? "Disable Wheel Brakes" : "Enable Wheel Brakes";
-                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Insert(0, bB);
+                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Add(bB);
+
+                        UnityAction[] explosion = { () => { plane.canExplode = !plane.canExplode; } };
+                        ContextMenuButton eB = new ContextMenuButton("explosion", "Disable Explosion", "Sets if the plane can explode or not. An explosion will only occur if the plane is running.", explosion);
+                        eB.LabelGetter = () => plane.canExplode ? "Disable Explosion" : "Enable Explosion";
+                        Instance.GetComponent<ContextMenuOptionComponent>().Buttons.Add(eB);
                     }
                 }
             );
@@ -188,18 +193,19 @@ namespace Mod
         private ExplosionCreator.ExplosionParameters ep;
 
         private float thrust = 0f;
-        private float currentMaxV = 0f;
         private const float forceCoefficient = 0.001f;
-        private const float maxThrust = 800f;
-        private const float maxVelocity = 100f;
-        private const float maxAngularV = 30f;
+        private const float maxThrust = 600f;
+        private const float maxVelocity = 80f;
+        private const float maxAngularV = 40f;
 
         public float direction = 1f; // either 1 or -1
         public int pitchMode = 0; // 0 - up/down 1 - stabilize 2 - maintain pitch
         public float pitch = 0f;
+        public float throttle = 1f; // this is used during WASD control
         public bool active = true;
         public bool on = false;
         public bool canExplode = true;
+        public bool useKeyboard = false;
         private float t = 0f;
         private float bladeSpeed = 0f;
         private float audioTime = 0f;
@@ -210,8 +216,8 @@ namespace Mod
             if(!active){ return; }
             on = !on;
             thrust = 0f;
+            if(on) { throttle = 1f; }
             rb.gravityScale = 1f;
-            currentMaxV = maxVelocity;
             wheel1.UpdateMass();
             wheel2.UpdateMass();
             wheel1.ToggleBrake();
@@ -221,6 +227,8 @@ namespace Mod
         { 
             rb = GetComponent<Rigidbody2D>();
             pb = GetComponent<PhysicalBehaviour>();
+
+            rb.drag = 0.1f;
 
             rb.mass = 100f;
             pb.TrueInitialMass = 100f;
@@ -235,14 +243,19 @@ namespace Mod
         /* 
         Graphs:
         
-        Max Velocity: https://www.desmos.com/calculator/znv917teig
-        Thrust Gain: https://www.desmos.com/calculator/bnkxaffux7
-        Drift Removal Rate: https://www.desmos.com/calculator/s3nv2wgcsk
+        Lift: https://www.desmos.com/calculator/nzyzsv7rut
+        Thrust Gain: https://www.desmos.com/calculator/dnk3qhbzub
+        Drift Removal Rate: https://www.desmos.com/calculator/lvdikwv1sn
+        Wheel Mass: https://www.desmos.com/calculator/f32lm5qeko
         Propeller Blade Animation: https://www.desmos.com/calculator/ommxgpmesu
         */
         void FixedUpdate()
         {
             float dot = -transform.right.y * direction; // this is the same as Vector2.Dot(-Vector2.up, transform.right); or (0 * x) + (-1 * y)
+
+            float percentOfMaxSpeed = (rb.velocity.magnitude / maxVelocity);
+            percentOfMaxSpeed = percentOfMaxSpeed < 0 ? 0 : percentOfMaxSpeed > 1 ? 1 : percentOfMaxSpeed;
+            rb.gravityScale = (-0.9f * percentOfMaxSpeed + 1); // simulate lift by scaling gravity with the percent of max speed
 
             if (pitchMode == 1)
             {
@@ -258,25 +271,25 @@ namespace Mod
             float av = rb.angularVelocity;
             rb.angularVelocity = av > maxAngularV ? maxAngularV : av < -maxAngularV ? -maxAngularV : av; // cap the angular velocity
 
-            currentMaxV = maxVelocity * (0.2f * dot + 1); // calculate the max velocity based on the dot
-            rb.velocity = Vector3.ClampMagnitude(rb.velocity, currentMaxV); // set maximum for the velocity magnitude
+            if(throttle == 0) { thrust = 0; }
+            else
+            {
+                float thrustGain = -0.375f * (dot*dot) + 1.375f * dot + 1; // calculate the thrust to add
+                thrust += thrustGain;
+                thrust = thrust > maxThrust ? maxThrust : thrust < 0 ? 0 : thrust; // make sure its not above the max or below 0
+            }
 
-            float thrustGain = -0.5f * (dot*dot) + 1.5f * dot + 1; // calculate the thrust to add
-            thrust += thrustGain;
-            thrust = thrust > maxThrust ? maxThrust : thrust < 0 ? 0 : thrust; // make sure its not above the max or below 0
+            float currentMaxV = throttle * maxVelocity * (0.2f * dot + 1); // calculate the max velocity based on the dot
+            if(rb.velocity.magnitude < currentMaxV) { rb.velocity += forceCoefficient * thrust * (Vector2)transform.right * direction; } // accelerate in the direction of the plane
 
-            rb.velocity += forceCoefficient * thrust * (Vector2)transform.right * direction; // accelerate in the direction of the plane
+            if (thrust > 300) { rb.velocity = rb.velocity.magnitude * Vector2.Lerp(rb.velocity.normalized, transform.right * direction, 0.2f * dot * dot); } // remove drift by transitioning the velocity direction to the plane's direction over time
 
-            if(thrust > 1f){ rb.gravityScale = -0.9f * (rb.velocity.magnitude / currentMaxV) + 1; } // simulate lift by scaling gravity with the percent of max speed
-            else{ rb.gravityScale = 1f; }
-
-            if (rb.gravityScale < 0.25f) { rb.velocity = rb.velocity.magnitude * Vector2.Lerp(rb.velocity.normalized, transform.right * direction, 0.125f * dot * dot); } // remove drift by transitioning the velocity direction to the plane's direction over time
-
-            float newMass = (1f - (rb.velocity.magnitude / currentMaxV)) * 5f; // for the wheels; their mass is less if the percent of max speed is higher
+            float newMass = -0.06f * rb.velocity.magnitude + 5f; // for the wheels; their mass is less if the speed is higher
+            newMass = newMass < 0 ? 0 : newMass;
             wheel1.UpdateMass(newMass);
             wheel2.UpdateMass(newMass);
         }
-        void Update() // this is just for the visual stuff
+        void Update()
         {
             if(active && (pb.IsUnderWater || pb.IsInLava)) // the plane will stop working if it goes under water or lava
             {
@@ -285,13 +298,29 @@ namespace Mod
                 active = false;
                 pitchMode = 0;
             }
+
+            // keyboard control
+            if(useKeyboard)
+            {
+                if(Input.GetKey(KeyCode.J)) { pitch = 0.25f; }
+                else if(Input.GetKey(KeyCode.L)) { pitch = -0.25f; }
+                else 
+                { 
+                    pitch = 0;
+                    rb.angularVelocity = Mathf.Lerp(rb.angularVelocity, 0f, Time.deltaTime*2f);
+                }
+
+                if (throttle < 1f && Input.GetKey(KeyCode.I)) { throttle += 0.0025f; }
+                else if (throttle > 0f && Input.GetKey(KeyCode.K)) { throttle -= 0.0025f; }
+                throttle = throttle < 0f ? 0f : throttle > 1f ? 1f : throttle;
+            }
             
             // propeller
-            if(thrust > 0f && bladeSpeed < 100f){ bladeSpeed += Time.deltaTime * 10f; }
+            if(thrust > 0f && bladeSpeed < 100f){ bladeSpeed += Time.deltaTime * 10f * throttle; }
             else if(thrust == 0f) { bladeSpeed -= Time.deltaTime * 10f; }
             bladeSpeed = bladeSpeed < 0f ? 0f : bladeSpeed;
             t += Time.deltaTime * bladeSpeed;
-            float scale = 0.5f * Mathf.Cos(t) + 0.5f;
+            float scale =  0.5f * Mathf.Cos(t) + 0.5f;
             blade1.localScale = new Vector3(scale, 1f, 1f);
             blade2.localScale = new Vector3(scale, 1f, 1f);
             
@@ -304,7 +333,7 @@ namespace Mod
             elevator.localRotation = Quaternion.RotateTowards(elevator.localRotation, Quaternion.Euler(0, 0, eleTarget), 100f * Time.deltaTime);
 
             // audio
-            if(thrust > 0f) 
+            if(thrust > 0f)
             { 
                 audioTime += Time.deltaTime;
                 if (startAudio)
@@ -332,7 +361,7 @@ namespace Mod
         }
         void OnCollisionEnter2D(Collision2D e)
         {
-            if(!active || !on || !canExplode){ return; }
+            if(!active || !on || !canExplode || throttle < 0.8f){ return; }
             float force = rb.velocity.magnitude * (e.rigidbody.mass > 100 ? 100 : e.rigidbody.mass); // the mass is capped at 100 because of the boundries
             if(force > 1000f)
             {
